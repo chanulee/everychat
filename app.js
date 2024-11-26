@@ -172,21 +172,7 @@ async function generateResponse() {
     responseDiv.appendChild(userMessage);
 
     // Create contextPrompt before adding the latest user message
-    let contextMessages = [];
-
-    if (useFullContext) {
-        contextMessages = [...conversationHistory];
-    } else if (selectedContextMessages.length > 0) {
-        selectedContextMessages.forEach(index => {
-            const userMsg = conversationHistory[index * 2];
-            const assistantMsg = conversationHistory[index * 2 + 1];
-            if (userMsg && assistantMsg) {
-                contextMessages.push(userMsg);
-                contextMessages.push(assistantMsg);
-            }
-        });
-    }
-
+    const contextMessages = getContextMessages().slice(0, -1); // Exclude the latest user message
     let contextPrompt = contextMessages.map(msg => `${msg.role}: ${msg.content}`).join('\n');
 
     // Then, construct the full prompt
@@ -194,6 +180,7 @@ async function generateResponse() {
 
     // Store the user message
     conversationHistory.push({ role: 'user', content: prompt });
+    addMessageToConversationTree('user', prompt);
 
     // Add system message
     const systemMessage = document.createElement('div');
@@ -273,6 +260,7 @@ async function generateResponse() {
 
         // Store the assistant's response
         conversationHistory.push({ role: 'assistant', content: fullResponse });
+        addMessageToConversationTree('assistant', fullResponse);
 
     } catch (error) {
         console.error('Error:', error);
@@ -950,6 +938,9 @@ function clearConversation() {
         // Reset context buttons
         document.getElementById('fullContextButton').classList.remove('active');
         document.getElementById('selectContextButton').classList.remove('active');
+
+        // Initialize the conversation tree
+        initializeConversationTree();
     }
 }
 
@@ -979,4 +970,24 @@ function toggleMultiverse() {
     // window.dispatchEvent(new CustomEvent('multiverseToggle', { 
     //     detail: { isVisible: multiverseVisible } 
     // }));
+}
+
+// Add this new function
+function getContextMessages() {
+    if (useFullContext) {
+        return [...conversationHistory];
+    }
+    
+    let messages = [];
+    if (selectedContextMessages.length > 0) {
+        selectedContextMessages.forEach(index => {
+            const userMsg = conversationHistory[index * 2];
+            const assistantMsg = conversationHistory[index * 2 + 1];
+            if (userMsg && assistantMsg) {
+                messages.push(userMsg);
+                messages.push(assistantMsg);
+            }
+        });
+    }
+    return messages;
 }
