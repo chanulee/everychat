@@ -10,8 +10,7 @@ let personas = JSON.parse(localStorage.getItem('personas')) || [
 ];
 
 // Context management variables
-let useFullContext = false;
-let selectedContextMessages = [];
+let useFullContext = true;
 let conversationHistory = [];
 
 // Auto-resize textarea
@@ -246,6 +245,7 @@ async function generateResponse() {
                         if (jsonResponse.response) {
                             fullResponse += jsonResponse.response;
                             aiResponse.innerHTML = marked.parse(fullResponse);
+                            responseDiv.scrollTop = responseDiv.scrollHeight;
                         }
                     } catch (e) {
                         console.error('Error parsing JSON:', e);
@@ -641,23 +641,22 @@ function updateControlsRow() {
                 <button class="context-button" id="clearConversationButton" title="Clear Conversation">
                     <span class="material-symbols-outlined">clear_all</span>
                 </button>
-                <button class="context-button" id="fullContextButton" title="Use Full History">
-                    <span class="material-symbols-outlined">select_all</span>
-                </button>
-                <button class="context-button" id="selectContextButton" title="Select Context">
-                    <span class="material-symbols-outlined">checklist</span>
-                </button>
             </div>
         </div>
     `;
 
-    // Add event listener for the persona button
+    // Add event listeners after creating the elements
     document.getElementById('personaButton').addEventListener('click', openPersonaModal);
-
-    // Add event listener for persona selection
     document.getElementById('personaList').addEventListener('change', function() {
         handlePersonaChange(this.options[this.selectedIndex]);
     });
+    
+    // Add clear conversation button listener
+    const clearButton = document.getElementById('clearConversationButton');
+    if (clearButton) {
+        clearButton.addEventListener('click', clearConversation);
+        console.log('Clear button listener attached'); // Debug log
+    }
 
     // Add event listeners for context buttons
     const fullContextButton = document.getElementById('fullContextButton');
@@ -679,96 +678,11 @@ function updateControlsRow() {
         fullContextButton.classList.remove('active');
     });
 
-    // Add event listener for clear conversation button
-    document.getElementById('clearConversationButton').addEventListener('click', clearConversation);
-
     // Trigger initial check for current selection
     const personaList = document.getElementById('personaList');
     if (personaList) {
         handlePersonaChange(personaList.options[personaList.selectedIndex]);
     }
-}
-
-// Open context selection modal
-function openContextSelectionModal() {
-    // Check if there's any conversation history
-    if (conversationHistory.length === 0) {
-        // If no history, disable the button and return early
-        document.getElementById('selectContextButton').classList.remove('active');
-        return;
-    }
-
-    // Toggle selection mode
-    const isSelectionMode = document.querySelector('.context-checkbox') !== null;
-    if (isSelectionMode) {
-        // If already in selection mode, save and exit
-        document.querySelectorAll('.context-checkbox').forEach(el => el.remove());
-        document.querySelectorAll('.conversation-pair').forEach(el => {
-            el.classList.remove('conversation-pair');
-        });
-        // Remove deselect all button
-        const deselectBtn = document.querySelector('.deselect-all-button');
-        if (deselectBtn) deselectBtn.remove();
-        
-        document.getElementById('selectContextButton').classList.toggle('active', selectedContextMessages.length > 0);
-        return;
-    }
-
-    // Add deselect all button
-    const controlsRow = document.querySelector('.controls-row');
-    const deselectButton = document.createElement('button');
-    deselectButton.className = 'deselect-all-button';
-    deselectButton.innerHTML = '<span class="material-symbols-outlined">close</span>';
-    deselectButton.title = "Deselect All";
-    deselectButton.onclick = function() {
-        document.querySelectorAll('.context-checkbox').forEach(checkbox => {
-            checkbox.checked = false;
-        });
-        selectedContextMessages = [];
-    };
-    controlsRow.querySelector('.context-controls').appendChild(deselectButton);
-
-    // Rest of the existing code for creating checkboxes and pairs...
-    const messages = document.querySelectorAll('.message');
-    let currentPair = null;
-    let pairIndex = 0;
-
-    messages.forEach((message, index) => {
-        if (message.classList.contains('user-message')) {
-            currentPair = document.createElement('div');
-            currentPair.className = 'conversation-pair';
-            message.parentNode.insertBefore(currentPair, message);
-            
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.className = 'context-checkbox';
-            checkbox.value = pairIndex;
-            checkbox.checked = selectedContextMessages.includes(pairIndex);
-            
-            checkbox.addEventListener('change', function() {
-                const pairIndex = parseInt(this.value);
-                if (this.checked) {
-                    if (!selectedContextMessages.includes(pairIndex)) {
-                        selectedContextMessages.push(pairIndex);
-                    }
-                } else {
-                    selectedContextMessages = selectedContextMessages.filter(i => i !== pairIndex);
-                }
-            });
-            
-            currentPair.appendChild(checkbox);
-            currentPair.appendChild(message);
-            
-            const nextMessage = messages[index + 1];
-            if (nextMessage && nextMessage.classList.contains('ai-message')) {
-                currentPair.appendChild(nextMessage);
-            }
-            
-            pairIndex++;
-        }
-    });
-
-    document.getElementById('selectContextButton').classList.add('active');
 }
 
 // Persona management functions
@@ -903,11 +817,14 @@ function initializeUI() {
         handlePersonaChange(personaList.options[personaList.selectedIndex]);
     }
 
-    // Add multiverse toggle handler
-    document.querySelector('[title="Back to Home"]').addEventListener('click', function(e) {
-        e.preventDefault(); // Prevent default navigation
-        toggleMultiverse();
-    });
+    // Initialize multiverse visibility
+    const multiverse = document.querySelector('.multiverse');
+    const multiverseButton = document.querySelector('[title="Back to Home"]');
+    if (multiverse && multiverseButton) {
+        multiverse.classList.add('visible');
+        multiverseButton.classList.add('active');
+        document.body.style.overflow = 'hidden';
+    }
 }
 
 // Initialize tabs
@@ -929,29 +846,33 @@ function initTabs() {
 // Add the clearConversation function
 function clearConversation() {
     if (confirm('Are you sure you want to clear the conversation?')) {
+        // Clear chat area
         const responseDiv = document.getElementById('response');
-        responseDiv.innerHTML = '';
-        conversationHistory = [];
-        selectedContextMessages = [];
-        useFullContext = false;
+        if (responseDiv) {
+            responseDiv.innerHTML = '';
+        }
         
-        // Reset context buttons
-        document.getElementById('fullContextButton').classList.remove('active');
-        document.getElementById('selectContextButton').classList.remove('active');
-
-        // Initialize the conversation tree
+        // Clear conversation history
+        conversationHistory = [];
+        
+        // Reset the conversation tree and clear multiverse visualization
         initializeConversationTree();
+        renderMultiverse();
+        
+        // Reset current node
+        currentConversationNode = null;
+
+        console.log('Conversation cleared'); // Debug log
     }
 }
 
-// Add near the top with other state variables
-let multiverseVisible = false;
+// Update the state variable near the top with other state variables
+let multiverseVisible = true;
 
 function toggleMultiverse() {
     const multiverse = document.querySelector('.multiverse');
     const button = document.querySelector('[title="Back to Home"]');
     
-    // Guard clause for missing elements
     if (!multiverse || !button) {
         console.error('Required multiverse elements not found');
         return;
@@ -959,35 +880,31 @@ function toggleMultiverse() {
 
     multiverseVisible = !multiverseVisible;
     
-    // Toggle classes
     multiverse.classList.toggle('visible', multiverseVisible);
     button.classList.toggle('active', multiverseVisible);
-    
-    // Optional: Prevent scrolling on main content when multiverse is visible
     document.body.style.overflow = multiverseVisible ? 'hidden' : '';
-    
-    // // Dispatch custom event for other components that might need to react
-    // window.dispatchEvent(new CustomEvent('multiverseToggle', { 
-    //     detail: { isVisible: multiverseVisible } 
-    // }));
 }
 
 // Add this new function
 function getContextMessages() {
-    if (useFullContext) {
-        return [...conversationHistory];
+    if (!useFullContext) {
+        return [];
     }
     
-    let messages = [];
-    if (selectedContextMessages.length > 0) {
-        selectedContextMessages.forEach(index => {
-            const userMsg = conversationHistory[index * 2];
-            const assistantMsg = conversationHistory[index * 2 + 1];
-            if (userMsg && assistantMsg) {
-                messages.push(userMsg);
-                messages.push(assistantMsg);
-            }
-        });
+    // Get messages from current branch only
+    const messages = [];
+    let node = currentConversationNode;
+    
+    // Walk up the tree to get the current conversation path
+    while (node) {
+        if (node.response) {
+            messages.unshift({ role: 'assistant', content: node.response });
+        }
+        if (node.prompt) {
+            messages.unshift({ role: 'user', content: node.prompt });
+        }
+        node = node.parent;
     }
+    
     return messages;
 }

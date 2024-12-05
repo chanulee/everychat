@@ -16,38 +16,32 @@ function generateUniqueId() {
 }
 
 // Define the ConversationNode class
-function ConversationNode(role, content, parent = null) {
+function ConversationNode(prompt, response = null, parent = null) {
     this.id = generateUniqueId();
-    this.role = role; // 'user' or 'assistant'
-    this.content = content;
+    this.prompt = prompt;
+    this.response = response;
     this.parent = parent;
     this.children = [];
 }
 
 // Function to add a message to the conversation tree
 function addMessageToConversationTree(role, content) {
-    const newNode = new ConversationNode(role, content, currentConversationNode);
-    if (currentConversationNode) {
-        currentConversationNode.children.push(newNode);
-    } else {
-        // This is the root node
-        conversationRoot = newNode;
+    if (role === 'user') {
+        // Create new node with just the prompt
+        const newNode = new ConversationNode(content, null, currentConversationNode);
+        if (currentConversationNode) {
+            currentConversationNode.children.push(newNode);
+        } else {
+            conversationRoot = newNode;
+        }
+        currentConversationNode = newNode;
+    } else if (role === 'assistant') {
+        // Add response to current node
+        currentConversationNode.response = content;
     }
-    currentConversationNode = newNode;
     
     // Update the multiverse visualization
     renderMultiverse();
-}
-
-// Function to get context messages from the current conversation path
-function getContextMessages() {
-    let node = currentConversationNode;
-    const messages = [];
-    while (node) {
-        messages.unshift({ role: node.role, content: node.content });
-        node = node.parent;
-    }
-    return messages;
 }
 
 // Function to render the multiverse visualization
@@ -70,8 +64,18 @@ function renderMultiverse() {
 
         const nodeElement = document.createElement('div');
         nodeElement.className = 'node';
-        nodeElement.textContent = node.content;
+        nodeElement.textContent = `Q: ${node.prompt}${node.response ? '\nA: ' + node.response : ''}`;
         nodeElement.dataset.nodeId = node.id;
+        
+        // Check if this node is in the current conversation path
+        let checkNode = currentConversationNode;
+        while (checkNode) {
+            if (checkNode === node) {
+                nodeElement.classList.add('context-node');
+                break;
+            }
+            checkNode = checkNode.parent;
+        }
         
         // Highlight the current node
         if (node === currentConversationNode) {
@@ -125,11 +129,23 @@ function renderChatFromConversationNode() {
     }
     
     messages.forEach(node => {
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'message ' + (node.role === 'user' ? 'user-message' : 'ai-message');
-        messageDiv.textContent = node.content;
-        responseDiv.appendChild(messageDiv);
+        // Create user message
+        const userMessageDiv = document.createElement('div');
+        userMessageDiv.className = 'message user-message';
+        userMessageDiv.textContent = node.prompt;
+        responseDiv.appendChild(userMessageDiv);
+
+        // Create AI message if it exists
+        if (node.response) {
+            const aiMessageDiv = document.createElement('div');
+            aiMessageDiv.className = 'message ai-message';
+            aiMessageDiv.innerHTML = marked.parse(node.response);
+            responseDiv.appendChild(aiMessageDiv);
+        }
     });
+
+    // Add auto-scroll
+    responseDiv.scrollTop = responseDiv.scrollHeight;
 }
 
 // Initialize the conversation tree
@@ -137,5 +153,4 @@ initializeConversationTree();
 
 // Expose functions to be used by app.js
 window.addMessageToConversationTree = addMessageToConversationTree;
-window.getContextMessages = getContextMessages;
 window.initializeConversationTree = initializeConversationTree;
