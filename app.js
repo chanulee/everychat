@@ -601,82 +601,94 @@ function handlePersonaChange(selectedOption) {
 // Update controls row to include both models and personas
 function updateControlsRow() {
     const controlsRow = document.querySelector('.controls-row');
-    const modelSelect = document.getElementById('modelList');
-    const models = Array.from(modelSelect.options).map(option => ({
-        name: option.value,
-        displayName: option.text
-    })).filter(model => model.name !== 'loading');
+    
+    // Fetch available models from the server
+    fetch('http://localhost:11434/api/tags')
+        .then(response => response.json())
+        .then(data => {
+            const models = data.models.map(model => ({
+                name: model.name,
+                displayName: model.name
+            }));
 
-    // Create combined list of default model personas and user personas
-    const defaultPersonas = models.map(createDefaultPersonaFromModel);
-    const allPersonas = [
-        ...defaultPersonas,
-        ...personas.filter(p => !p.isDefault)  // Only include user-created personas
-    ];
+            // Create combined list of default model personas and user personas
+            const defaultPersonas = models.map(createDefaultPersonaFromModel);
+            const allPersonas = [
+                ...defaultPersonas,
+                ...personas.filter(p => !p.isDefault)  // Only include user-created personas
+            ];
 
-    // Update the controls row HTML
-    controlsRow.innerHTML = `
-        <div class="model-select-container">
-            <select id="modelList" style="display: none;">
-                ${models.map(m => `<option value="${m.name}">${m.displayName}</option>`).join('')}
-            </select>
-        </div>
-        <div class="persona-select-container">
-            <button id="personaButton" class="icon-button" title="Manage Personas">
-                <span class="material-symbols-outlined">person</span>
-            </button>
-            <select id="personaList">
-                <optgroup label="Models">
-                    ${defaultPersonas.map(p => 
-                        `<option value="${p.name}" data-is-default="true">${p.name}</option>`
-                    ).join('')}
-                </optgroup>
-                <optgroup label="Personas">
-                    ${personas.filter(p => !p.isDefault).map(p => 
-                        `<option value="${p.name}">${p.name}</option>`
-                    ).join('')}
-                </optgroup>
-            </select>
-            <div class="context-controls">
-                <button class="context-button" id="clearConversationButton" title="Clear Conversation">
-                    <span class="material-symbols-outlined">clear_all</span>
-                </button>
-            </div>
-        </div>
-    `;
+            // Update the controls row HTML
+            controlsRow.innerHTML = `
+                <div class="model-select-container">
+                    <select id="modelList" style="display: none;">
+                        ${models.map(m => `<option value="${m.name}">${m.displayName}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="persona-select-container">
+                    <button id="personaButton" class="icon-button" title="Manage Personas">
+                        <span class="material-symbols-outlined">person</span>
+                    </button>
+                    <select id="personaList">
+                        <optgroup label="Models">
+                            ${defaultPersonas.map(p => 
+                                `<option value="${p.name}" data-is-default="true">${p.name}</option>`
+                            ).join('')}
+                        </optgroup>
+                        <optgroup label="Personas">
+                            ${personas.filter(p => !p.isDefault).map(p => 
+                                `<option value="${p.name}">${p.name}</option>`
+                            ).join('')}
+                        </optgroup>
+                    </select>
+                    <div class="context-controls">
+                        <button class="context-button" id="clearConversationButton" title="Clear Conversation">
+                            <span class="material-symbols-outlined">clear_all</span>
+                        </button>
+                    </div>
+                </div>
+            `;
 
-    // Add event listeners after creating the elements
+            // Re-attach event listeners
+            attachControlsEventListeners();
+        })
+        .catch(error => {
+            console.error('Error fetching models:', error);
+            // Fallback to show at least the personas if server is offline
+            controlsRow.innerHTML = `
+                <div class="persona-select-container">
+                    <button id="personaButton" class="icon-button" title="Manage Personas">
+                        <span class="material-symbols-outlined">person</span>
+                    </button>
+                    <select id="personaList">
+                        <optgroup label="Personas">
+                            ${personas.filter(p => !p.isDefault).map(p => 
+                                `<option value="${p.name}">${p.name}</option>`
+                            ).join('')}
+                        </optgroup>
+                    </select>
+                    <div class="context-controls">
+                        <button class="context-button" id="clearConversationButton" title="Clear Conversation">
+                            <span class="material-symbols-outlined">clear_all</span>
+                        </button>
+                    </div>
+                </div>
+            `;
+            attachControlsEventListeners();
+        });
+}
+
+// Separate function to attach event listeners
+function attachControlsEventListeners() {
     document.getElementById('personaButton').addEventListener('click', openPersonaModal);
     document.getElementById('personaList').addEventListener('change', function() {
         handlePersonaChange(this.options[this.selectedIndex]);
     });
     
-    // Add clear conversation button listener
     const clearButton = document.getElementById('clearConversationButton');
     if (clearButton) {
         clearButton.addEventListener('click', clearConversation);
-        console.log('Clear button listener attached'); // Debug log
     }
-
-    // Add event listeners for context buttons
-    const fullContextButton = document.getElementById('fullContextButton');
-    fullContextButton.addEventListener('click', function() {
-        useFullContext = !useFullContext;
-        this.classList.toggle('active', useFullContext);
-        // When fullContext is enabled, clear selectedContextMessages
-        if (useFullContext) {
-            selectedContextMessages = [];
-            document.getElementById('selectContextButton').classList.remove('active');
-        }
-    });
-
-    const selectContextButton = document.getElementById('selectContextButton');
-    selectContextButton.addEventListener('click', function() {
-        openContextSelectionModal();
-        // Disable fullContext when selecting context
-        useFullContext = false;
-        fullContextButton.classList.remove('active');
-    });
 
     // Trigger initial check for current selection
     const personaList = document.getElementById('personaList');
@@ -724,14 +736,6 @@ function addPersona(persona) {
 }
 
 function deletePersona(name) {
-    // Get non-default personas
-    const userPersonas = personas.filter(p => !p.isDefault);
-    
-    if (userPersonas.length <= 1 && userPersonas[0]?.name === name) {
-        alert('Cannot delete the last persona');
-        return;
-    }
-    
     if (confirm(`Are you sure you want to delete ${name}?`)) {
         personas = personas.filter(p => p.name !== name);
         localStorage.setItem('personas', JSON.stringify(personas));
@@ -797,12 +801,6 @@ document.addEventListener('DOMContentLoaded', initializeUI);
 function initializeUI() {
     initTabs();
     updateControlsRow();
-
-    // Add event listeners for persona management
-    document.getElementById('personaButton').addEventListener('click', openPersonaModal);
-
-    // Add settings button click handler
-    document.getElementById('settingsButton').addEventListener('click', openSettingsModal);
 
     // Add close button handlers
     document.querySelectorAll('.close-button').forEach(button => {
@@ -908,3 +906,10 @@ function getContextMessages() {
     
     return messages;
 }
+
+// Add this new event listener setup
+document.addEventListener('click', function(e) {
+    if (e.target.id === 'settingsButton' || e.target.closest('#settingsButton')) {
+        openSettingsModal();
+    }
+});
