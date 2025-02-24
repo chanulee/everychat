@@ -27,6 +27,9 @@ temperatureSlider.addEventListener('input', function() {
     temperatureValue.textContent = this.value;
 });
 
+// Keep track of editing state
+let currentEditingPersona = null;
+
 async function checkServerStatus() {
     const statusIndicator = document.getElementById('serverStatus');
     const statusText = document.getElementById('serverStatusText');
@@ -537,23 +540,6 @@ function displayImagePreview(imageData) {
 // Image upload initialization
 setupImageUpload();
 
-// Handle model selection changes
-function handleModelChange() {
-    const modelSelect = document.getElementById('modelList');
-    const imageUploadBtn = document.getElementById('imageUpload');
-    const imagePreview = document.getElementById('imagePreview');
-    
-    // Show image upload button only for llama3.2-vision model
-    if (modelSelect.value === 'llama3.2-vision:latest') {
-        imageUploadBtn.style.display = 'block';
-    } else {
-        // Hide button and clear any selected image for other models
-        imageUploadBtn.style.display = 'none';
-        selectedImage = null;
-        imagePreview.innerHTML = '';
-    }
-}
-
 // Create default personas from models
 function createDefaultPersonaFromModel(model) {
     return {
@@ -710,22 +696,34 @@ function closePersonaModal() {
 
 function updatePersonaList() {
     const personaGrid = document.getElementById('personaGrid');
-    personaGrid.innerHTML = personas.map(persona => `
-        <div class="persona-card">
-            <h3>${persona.name}</h3>
-            <div class="persona-meta">
-                <span class="tag">Model: ${persona.model}</span>
-                <span class="tag">Temp: ${persona.temperature}</span>
+    if (!personaGrid) return;
+    
+    if (personas.length === 0) {
+        personaGrid.innerHTML = '<div class="empty-state">No personas yet. Create one to get started!</div>';
+        return;
+    }
+    
+    personaGrid.innerHTML = personas.map(persona => {
+        // Create a properly escaped attribute value for the onclick handler
+        const escapedName = persona.name.replace(/"/g, '&quot;');
+        
+        return `
+            <div class="persona-card">
+                <h3>${escapeHtml(persona.name)}</h3>
+                <div class="persona-meta">
+                    <span class="tag">Model: ${escapeHtml(persona.model)}</span>
+                    <span class="tag">Temp: ${persona.temperature}</span>
+                </div>
+                <div class="persona-system-prompt">
+                    ${escapeHtml(persona.systemPrompt || '')}
+                </div>
+                <div class="persona-actions">
+                    <button class="btn btn-primary" onclick="editPersona('${escapedName}')">Edit</button>
+                    <button class="btn btn-danger" onclick="deletePersona('${escapedName}')">Delete</button>
+                </div>
             </div>
-            <div class="persona-system-prompt">
-                ${persona.systemPrompt}
-            </div>
-            <div class="persona-actions">
-                <button class="btn btn-primary" onclick="editPersona('${persona.name}')">Edit</button>
-                <button class="btn btn-danger" onclick="deletePersona('${persona.name}')">Delete</button>
-            </div>
-        </div>
-    `).join('');
+        `;
+    }).join('');
 }
 
 function addPersona(persona) {
@@ -736,11 +734,28 @@ function addPersona(persona) {
 }
 
 function deletePersona(name) {
-    if (confirm(`Are you sure you want to delete ${name}?`)) {
-        personas = personas.filter(p => p.name !== name);
+    console.log("Deleting persona:", name); // Debug log
+    
+    if (confirm(`Are you sure you want to delete "${name}"?`)) {
+        // Find the persona by name
+        const personaIndex = personas.findIndex(p => p.name === name);
+        
+        if (personaIndex === -1) {
+            console.error(`Persona "${name}" not found`);
+            return;
+        }
+        
+        // Remove the persona from the array
+        personas.splice(personaIndex, 1);
+        
+        // Update localStorage
         localStorage.setItem('personas', JSON.stringify(personas));
+        
+        // Update UI
         updatePersonaList();
         updateControlsRow();
+        
+        console.log(`Persona "${name}" deleted successfully`);
     }
 }
 
@@ -748,51 +763,128 @@ function editPersona(name) {
     // Close the persona management modal first
     closePersonaModal();
     
-    const persona = personas.find(p => p.name === name) || {
+    // Track if we're editing existing or creating new
+    currentEditingPersona = name ? personas.find(p => p.name === name) : null;
+    
+    const persona = currentEditingPersona || {
         name: '',
         model: 'mistral-nemo:latest',
         temperature: 0.7,
         systemPrompt: ''
     };
 
-    document.getElementById('editPersonaName').value = persona.name;
-    document.getElementById('editPersonaTemperature').value = persona.temperature;
-    document.getElementById('editPersonaSystemPrompt').value = persona.systemPrompt;
+    // Set modal title based on action
+    const modalTitle = document.querySelector('#editPersonaModal .modal-header h2');
+    if (modalTitle) {
+        modalTitle.textContent = currentEditingPersona ? 'Edit Persona' : 'Create New Persona';
+    }
+
+    // Populate form fields
+    const nameField = document.getElementById('editPersonaName');
+    const temperatureSlider = document.getElementById('editPersonaTemperature');
+    const temperatureValue = document.getElementById('editPersonaTemperatureValue');
+    const systemPromptField = document.getElementById('editPersonaSystemPrompt');
+    
+    if (nameField) nameField.value = persona.name;
+    if (temperatureSlider) temperatureSlider.value = persona.temperature;
+    if (temperatureValue) temperatureValue.textContent = persona.temperature;
+    if (systemPromptField) systemPromptField.value = persona.systemPrompt;
+    
+    // Attach temperature slider event if not already attached
+    if (temperatureSlider && !temperatureSlider.hasEventListener) {
+        temperatureSlider.addEventListener('input', function() {
+            const value = document.getElementById('editPersonaTemperatureValue');
+            if (value) value.textContent = this.value;
+        });
+        temperatureSlider.hasEventListener = true;
+    }
     
     // Fetch and populate models
     fetchModels().then(() => {
         const modelSelect = document.getElementById('editPersonaModel');
         if (modelSelect && persona.model) {
-            const option = modelSelect.querySelector(`option[value="${persona.model}"]`);
-            if (option) option.selected = true;
+            // First check if the exact model exists
+            let option = modelSelect.querySelector(`option[value="${persona.model}"]`);
+            
+            // If not, try case-insensitive match
+            if (!option) {
+                Array.from(modelSelect.options).forEach(opt => {
+                    if (opt.value.toLowerCase() === persona.model.toLowerCase()) {
+                        opt.selected = true;
+                    }
+                });
+            } else {
+                option.selected = true;
+            }
         }
+    }).catch(error => {
+        console.error('Error loading models for persona editor:', error);
+        // Still show the modal even if models can't be loaded
     });
     
     document.getElementById('editPersonaModal').style.display = 'block';
 }
 
 function savePersonaEdit() {
-    const name = document.getElementById('editPersonaName').value;
-    const model = document.getElementById('editPersonaModel').value;
-    const temperature = parseFloat(document.getElementById('editPersonaTemperature').value);
-    const systemPrompt = document.getElementById('editPersonaSystemPrompt').value;
+    const nameField = document.getElementById('editPersonaName');
+    const modelSelect = document.getElementById('editPersonaModel');
+    const temperatureSlider = document.getElementById('editPersonaTemperature');
+    const systemPromptField = document.getElementById('editPersonaSystemPrompt');
+    
+    if (!nameField || !modelSelect || !temperatureSlider || !systemPromptField) {
+        console.error('Form fields not found');
+        return;
+    }
+    
+    const name = nameField.value.trim();
+    const model = modelSelect.value;
+    const temperature = parseFloat(temperatureSlider.value);
+    const systemPrompt = systemPromptField.value;
 
     if (!name || !model || isNaN(temperature)) {
         alert('Please fill all fields correctly');
         return;
     }
-
-    const index = personas.findIndex(p => p.name === name);
-    if (index >= 0) {
-        personas[index] = { name, model, temperature, systemPrompt };
-    } else {
-        personas.push({ name, model, temperature, systemPrompt });
+    
+    // Check for duplicate names when creating new or changing name
+    const isDuplicate = currentEditingPersona 
+        ? (currentEditingPersona.name !== name && personas.some(p => p.name === name))
+        : personas.some(p => p.name === name);
+        
+    if (isDuplicate) {
+        alert(`A persona named "${name}" already exists. Please choose a different name.`);
+        return;
     }
 
+    // If editing existing persona, remove the old one first
+    if (currentEditingPersona) {
+        personas = personas.filter(p => p.name !== currentEditingPersona.name);
+    }
+    
+    // Add the new/updated persona
+    personas.push({ name, model, temperature, systemPrompt });
+    
+    // Save to localStorage
     localStorage.setItem('personas', JSON.stringify(personas));
+    
+    // Update UI
     updatePersonaList();
     updateControlsRow();
+    
+    // Reset editing state and close modal
+    currentEditingPersona = null;
     document.getElementById('editPersonaModal').style.display = 'none';
+}
+
+// Helper function to escape HTML for safe rendering
+function escapeHtml(str) {
+    if (!str) return '';
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
 }
 
 // Initialize UI
@@ -822,6 +914,9 @@ function initializeUI() {
         multiverse.classList.add('visible');
         multiverseButton.classList.add('active');
         document.body.style.overflow = 'hidden';
+        
+        // Add event listener for the multiverse toggle button
+        multiverseButton.addEventListener('click', toggleMultiverse);
     }
 }
 
@@ -883,13 +978,13 @@ function toggleMultiverse() {
     document.body.style.overflow = multiverseVisible ? 'hidden' : '';
 }
 
-// Add this new function
+// Improve the getContextMessages function
 function getContextMessages() {
     if (!useFullContext) {
-        return [];
+        return conversationHistory; // Return the flat history if not using tree context
     }
     
-    // Get messages from current branch only
+    // If using full context (tree-based), get messages from current branch only
     const messages = [];
     let node = currentConversationNode;
     

@@ -60,6 +60,10 @@
     background-color: rgba(0, 123, 255, 0.05);
 }
 
+.node.summarizing {
+    background-color: rgba(0, 123, 255, 0.05);
+}
+
 .children-container {
     display: flex;
     flex-direction: row;
@@ -147,4 +151,21 @@
 
 [data-theme="dark"] .connection-line {
     stroke: var(--border-color);
+}
+
+/* Loading indicator animation */
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}
+
+.summarizing-text {
+    font-style: italic;
+    color: #666;
+    animation: pulse 1.5s infinite;
+}
+
+[data-theme="dark"] .summarizing-text {
+    color: #aaa;
 }
